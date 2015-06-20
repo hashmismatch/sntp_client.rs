@@ -18,6 +18,24 @@ use collections::vec::*;
 
 pub const NtpToUnixEpochSeconds: u64 = 0x83AA7E80;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct NtpEpochTime(u64);
+
+impl NtpEpochTime {
+	pub fn new(ms: u64) -> NtpEpochTime {
+		NtpEpochTime(ms)
+	}
+
+	pub fn from_unix_seconds(unix: u64) -> NtpEpochTime {
+		NtpEpochTime((NtpToUnixEpochSeconds + unix) * 1000)
+	}
+
+	pub fn to_u64(&self) -> u64 {
+		let NtpEpochTime(ms) = *self;
+		ms
+	}
+}
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SntpMode {
 	Unknown,
@@ -63,11 +81,11 @@ impl SntpData {
 		}
 	}
 
-	pub fn new_request_sec(unix_now_seconds: u64) -> SntpData {
+	pub fn new_request_sec(now: NtpEpochTime) -> SntpData {
 		let mut data = SntpData::new();
 		data.set_mode(SntpMode::Client);
 		data.set_version(4);
-		data.set_transmit_time((NtpToUnixEpochSeconds + unix_now_seconds) * 1000);
+		data.set_transmit_time(now);
 		data
 	}
 
@@ -87,28 +105,28 @@ impl SntpData {
 		self.data[0] = ((self.data[0]) & !0x38) | ((version & 0x7) << 3);
 	}
 
-	pub fn get_reference_timestamp(&self) -> u64 {
+	pub fn get_reference_timestamp(&self) -> NtpEpochTime {
 		SntpData::data_to_ms(&self.data[16..24])
 	}
 
 	// T1
-	pub fn get_originate_timestamp(&self) -> u64 {
+	pub fn get_originate_timestamp(&self) -> NtpEpochTime {
 		SntpData::data_to_ms(&self.data[24..32])
 	}
 
 	// T2
-	pub fn get_receive_time(&self) -> u64 {
+	pub fn get_receive_time(&self) -> NtpEpochTime {
 		SntpData::data_to_ms(&self.data[32..40])
 	}
 
 	// T3
-	pub fn get_transmit_time(&self) -> u64 {
+	pub fn get_transmit_time(&self) -> NtpEpochTime {
 		SntpData::data_to_ms(&self.data[40..48])
 	}	
 
 
 	// T3
-	pub fn set_transmit_time(&mut self, ms: u64) {
+	pub fn set_transmit_time(&mut self, ms: NtpEpochTime) {
 		let d = SntpData::ms_to_data(ms);
 		let ref mut t = &mut self.data[40..48];
 
@@ -127,8 +145,8 @@ impl SntpData {
 		SntpMode::from_val(self.data[0] & 0x7)
 	}
 
-	pub fn data_to_ms(data: &[u8]) -> u64 {
-		if data.len() != 8 { return 0; }
+	pub fn data_to_ms(data: &[u8]) -> NtpEpochTime {
+		if data.len() != 8 { return NtpEpochTime::new(0); }
 
 		let int_part = {
 			let mut p: u64 = 0;
@@ -146,12 +164,12 @@ impl SntpData {
 			f + 1
 		};
 
-		int_part * 1000 + (frac_part * 1000) / 0x100000000
+		NtpEpochTime::new(int_part * 1000 + (frac_part * 1000) / 0x100000000)
 	}
 
-	pub fn ms_to_data(ms: u64) -> [u8; 8] {
-		let int_part = ms / 1000;
-		let frac_part = ((ms % 1000) * 0x100000000) / 1000;
+	pub fn ms_to_data(ms: NtpEpochTime) -> [u8; 8] {
+		let int_part = ms.to_u64() / 1000;
+		let frac_part = ((ms.to_u64() % 1000) * 0x100000000) / 1000;
 
 		let mut data = [0; 8];
 
@@ -170,15 +188,16 @@ impl SntpData {
 		data
 	}
 
-	pub fn local_time_offset(&self, response_received_at: u64) -> i64 {
-		let s = (self.get_receive_time() as i64 - self.get_originate_timestamp() as i64) + (self.get_transmit_time() as i64 - response_received_at as i64);
+	pub fn local_time_offset(&self, response_received_at: NtpEpochTime) -> i64 {
+		let s = (self.get_receive_time().to_u64() as i64 - self.get_originate_timestamp().to_u64() as i64) +
+			    (self.get_transmit_time().to_u64() as i64 - response_received_at.to_u64() as i64);
 		s / 2
 	}
 }
 
 impl core::fmt::Debug for SntpData {
     fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
-        write!(f, "reference time: {}, t1: {}, t2: {}, t3: {}", 
+        write!(f, "reference time: {:?}, t1: {:?}, t2: {:?}, t3: {:?}", 
         	self.get_reference_timestamp(),
         	self.get_originate_timestamp(),
         	self.get_receive_time(),
@@ -214,7 +233,7 @@ mod tests {
 
 	#[test]
 	fn test_ms_conv() {
-		let ms: u64 = 5229834209;
+		let ms = NtpEpochTime::new(5229834209);
 
 		let data = SntpData::ms_to_data(ms);
 
@@ -228,9 +247,9 @@ mod tests {
 		let mut data = SntpData::new();
 		data.set_mode(SntpMode::Client);
 		data.set_version(4);
-		data.set_transmit_time(1001);
+		data.set_transmit_time(NtpEpochTime::new(1001));
 
-		assert_eq!(1001, data.get_transmit_time());
+		assert_eq!(NtpEpochTime::new(1001), data.get_transmit_time());
 		assert_eq!(SntpMode::Client, data.get_mode());
 		assert_eq!(4, data.get_version());
 
@@ -242,7 +261,7 @@ mod tests {
 	fn sntp_udp() {
 		
 		let now = now_utc();
-		let req = SntpData::new_request_sec(now.to_timespec().sec as u64);
+		let req = SntpData::new_request_sec(NtpEpochTime::from_unix_seconds(now.to_timespec().sec as u64));
 		println!("sntp request: {:?}", req);
 		
 		let send_addr = "0.pool.ntp.org:123";
@@ -270,7 +289,7 @@ mod tests {
 
 		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
 		println!("sntp response: {:?}", sntp_resp);
-		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset((NtpToUnixEpochSeconds + received_at.to_timespec().sec as u64) * 1000));
+		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset(NtpEpochTime::from_unix_seconds(received_at.to_timespec().sec as u64)));
 
 
 	}
