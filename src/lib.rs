@@ -2,16 +2,21 @@
 
 #![feature(core, alloc, no_std, macro_reexport, unboxed_closures, collections, convert, hash, step_by)]
 
+#[macro_use(write)]
 extern crate core;
 extern crate alloc;
 extern crate collections;
+
 
 use core::prelude::*;
 use core::hash::Hasher;
 use core::hash::SipHasher;
 use core::array::FixedSizeArray;
+use core::fmt::{Formatter};
 
 use collections::vec::*;
+
+pub const NtpToUnixEpochSeconds: u64 = 0x83AA7E80;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SntpMode {
@@ -58,6 +63,22 @@ impl SntpData {
 		}
 	}
 
+	pub fn new_request_sec(unix_now_seconds: u64) -> SntpData {
+		let mut data = SntpData::new();
+		data.set_mode(SntpMode::Client);
+		data.set_version(4);
+		data.set_transmit_time((NtpToUnixEpochSeconds + unix_now_seconds) * 1000);
+		data
+	}
+
+	pub fn from_buffer(buff: &[u8]) -> Option<SntpData> {
+		if buff.len() != 48 { return None; }
+		let mut s = SntpData::new();
+		s.data.clone_from_slice(buff);
+		Some(s)
+	}
+
+
 	pub fn get_version(&self) -> u8 {
 		(self.data[0] & 0x38) >> 3
 	}
@@ -66,6 +87,27 @@ impl SntpData {
 		self.data[0] = ((self.data[0]) & !0x38) | ((version & 0x7) << 3);
 	}
 
+	pub fn get_reference_timestamp(&self) -> u64 {
+		SntpData::data_to_ms(&self.data[16..24])
+	}
+
+	// T1
+	pub fn get_originate_timestamp(&self) -> u64 {
+		SntpData::data_to_ms(&self.data[24..32])
+	}
+
+	// T2
+	pub fn get_receive_time(&self) -> u64 {
+		SntpData::data_to_ms(&self.data[32..40])
+	}
+
+	// T3
+	pub fn get_transmit_time(&self) -> u64 {
+		SntpData::data_to_ms(&self.data[40..48])
+	}	
+
+
+	// T3
 	pub fn set_transmit_time(&mut self, ms: u64) {
 		let d = SntpData::ms_to_data(ms);
 		let ref mut t = &mut self.data[40..48];
@@ -75,15 +117,7 @@ impl SntpData {
 		}
 	}
 
-	pub fn get_transmit_time(&self) -> u64 {
-		let mut d = [0; 8];
-		let mut j = 0;
-		for i in 40..48 {
-			d[j] = self.data[i];
-			j += 1;
-		}
-		SntpData::data_to_ms(&d)
-	}
+	
 
 	pub fn set_mode(&mut self, mode: SntpMode) {
 		self.data[0] = ((self.data[0]) & !0x7) | (0x7 & mode.to_val());
@@ -93,7 +127,9 @@ impl SntpData {
 		SntpMode::from_val(self.data[0] & 0x7)
 	}
 
-	pub fn data_to_ms(data: &[u8; 8]) -> u64 {
+	pub fn data_to_ms(data: &[u8]) -> u64 {
+		if data.len() != 8 { return 0; }
+
 		let int_part = {
 			let mut p: u64 = 0;
 			for i in 0..4 {
@@ -132,7 +168,18 @@ impl SntpData {
 		}
 
 		data
-	}
+	}	
+}
+
+impl core::fmt::Debug for SntpData {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
+        write!(f, "reference time: {}, t1: {}, t2: {}, t3: {}", 
+        	self.get_reference_timestamp(),
+        	self.get_originate_timestamp(),
+        	self.get_receive_time(),
+        	self.get_transmit_time()
+        	)
+    }
 }
 
 
@@ -141,15 +188,24 @@ impl SntpData {
 
 // for tests
 #[cfg(test)]
-#[macro_use(println, assert_eq, print, panic)]
+#[macro_use(println, assert_eq, print, panic, try, panic)]
 extern crate std;
+
+
+
+#[cfg(test)]
+extern crate time;
 
 #[cfg(test)]
 mod tests {
+	
+
 	use super::*;
 	use core::prelude::*;
 	use std::prelude::*;
 	use collections::vec::Vec;
+	use time::*;
+	
 
 	#[test]
 	fn test_ms_conv() {
@@ -157,29 +213,59 @@ mod tests {
 
 		let data = SntpData::ms_to_data(ms);
 
-		//println!("data: {:?}", data);
-
 		let ms_conv = SntpData::data_to_ms(&data);
 
 		assert_eq!(ms, ms_conv);
 	}
 
 	#[test]
-	fn sntp1() {
+	fn sntp_data() {
 		let mut data = SntpData::new();
 		data.set_mode(SntpMode::Client);
 		data.set_version(4);
 		data.set_transmit_time(1001);
 
-		{
-			let mut v = Vec::new();
-			v.push_all(&data.data);
-			println!("data: {:?}", v);
-		}
-
 		assert_eq!(1001, data.get_transmit_time());
 		assert_eq!(SntpMode::Client, data.get_mode());
 		assert_eq!(4, data.get_version());
+
+	}
+
+	use std::net::*;
+
+	#[test]
+	fn sntp_udp() {
+		
+		let now = now_utc();
+		let req = SntpData::new_request_sec(now.to_timespec().sec as u64);
+		println!("sntp request: {:?}", req);
+		
+		let send_addr = "0.pool.ntp.org:123";
+		let mut socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+
+		match socket.send_to(&req.data[..], send_addr) {
+			Ok(bytes) => { println!("Sent {} bytes", bytes); }
+			_ => { panic!("fail"); }
+		}
+		
+		let mut buf = [0; 48];
+		let (amt, src) = socket.recv_from(&mut buf).unwrap();
+
+		let received_at = now_utc();
+
+		{
+			let mut v = Vec::new();
+			v.push_all(&buf);
+			println!("net received: {:?}", v);
+		}
+
+		drop(socket);
+
+	
+
+		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
+		println!("sntp response: {:?}", sntp_resp);
+
 
 	}
 }
