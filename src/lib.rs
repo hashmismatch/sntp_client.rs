@@ -13,7 +13,7 @@ use core::array::FixedSizeArray;
 
 use collections::vec::*;
 
-
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SntpMode {
 	Unknown,
 	SymmetricActive,
@@ -58,8 +58,35 @@ impl SntpData {
 		}
 	}
 
+	pub fn get_version(&self) -> u8 {
+		(self.data[0] & 0x38) >> 3
+	}
+
+	pub fn set_version(&mut self, version: u8) {
+		self.data[0] = ((self.data[0]) & !0x38) | ((version & 0x7) << 3);
+	}
+
+	pub fn set_transmit_time(&mut self, ms: u64) {
+		let d = SntpData::ms_to_data(ms);
+		let ref mut t = &mut self.data[40..48];
+
+		for i in 0..d.len() {
+			t[i] = d[i];
+		}
+	}
+
+	pub fn get_transmit_time(&self) -> u64 {
+		let mut d = [0; 8];
+		let mut j = 0;
+		for i in 40..48 {
+			d[j] = self.data[i];
+			j += 1;
+		}
+		SntpData::data_to_ms(&d)
+	}
+
 	pub fn set_mode(&mut self, mode: SntpMode) {
-		self.data[0] = self.data[0] & mode.to_val();
+		self.data[0] = ((self.data[0]) & !0x7) | (0x7 & mode.to_val());
 	}
 
 	pub fn get_mode(&self) -> SntpMode {
@@ -141,8 +168,19 @@ mod tests {
 	fn sntp1() {
 		let mut data = SntpData::new();
 		data.set_mode(SntpMode::Client);
+		data.set_version(4);
+		data.set_transmit_time(1001);
 
-		//println!("data: {:?}", data);
+		{
+			let mut v = Vec::new();
+			v.push_all(&data.data);
+			println!("data: {:?}", v);
+		}
+
+		assert_eq!(1001, data.get_transmit_time());
+		assert_eq!(SntpMode::Client, data.get_mode());
+		assert_eq!(4, data.get_version());
+
 	}
 }
 
