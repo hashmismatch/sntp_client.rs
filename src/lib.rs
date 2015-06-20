@@ -255,13 +255,21 @@ mod tests {
 
 	}
 
+	fn time_to_ntp(time: &Tm) -> NtpEpochTime {
+		let t = time.to_timespec();
+
+		NtpEpochTime::new(((NtpToUnixEpochSeconds + t.sec as u64) * 1000) + (t.nsec as u64 / 1000000))
+	}
+
 	use std::net::*;
 
 	#[test]
 	fn sntp_udp() {
 		
 		let now = now_utc();
-		let req = SntpData::new_request_sec(NtpEpochTime::from_unix_seconds(now.to_timespec().sec as u64));
+		println!("{:?}", now.to_timespec());
+
+		let req = SntpData::new_request_sec(time_to_ntp(&now));
 		println!("sntp request: {:?}", req);
 		
 		let send_addr = "0.pool.ntp.org:123";
@@ -289,7 +297,7 @@ mod tests {
 
 		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
 		println!("sntp response: {:?}", sntp_resp);
-		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset(NtpEpochTime::from_unix_seconds(received_at.to_timespec().sec as u64)));
+		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset(time_to_ntp(&received_at)));
 
 
 	}
