@@ -168,7 +168,12 @@ impl SntpData {
 		}
 
 		data
-	}	
+	}
+
+	pub fn local_time_offset(&self, response_received_at: u64) -> i64 {
+		let s = (self.get_receive_time() as i64 - self.get_originate_timestamp() as i64) + (self.get_transmit_time() as i64 - response_received_at as i64);
+		s / 2
+	}
 }
 
 impl core::fmt::Debug for SntpData {
@@ -265,6 +270,7 @@ mod tests {
 
 		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
 		println!("sntp response: {:?}", sntp_resp);
+		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset((NtpToUnixEpochSeconds + received_at.to_timespec().sec as u64) * 1000));
 
 
 	}

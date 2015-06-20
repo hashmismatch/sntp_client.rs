@@ -3,3 +3,6 @@
 name = "sntp-client"
 version = "0.0.1"
 authors = ["Rudi Benkovic <rudi.benkovic@gmail.com>"]
+
+[dependencies]
+time = "0.1"
