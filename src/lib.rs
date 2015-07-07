@@ -193,6 +193,10 @@ impl SntpData {
 			    (self.get_transmit_time().to_u64() as i64 - response_received_at.to_u64() as i64);
 		s / 2
 	}
+
+	pub fn get_data(&self) -> &[u8] {
+		&self.data
+	}
 }
 
 impl core::fmt::Debug for SntpData {
