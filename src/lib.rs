@@ -34,6 +34,10 @@ impl NtpEpochTime {
 		let NtpEpochTime(ms) = *self;
 		ms
 	}
+
+	pub fn to_unix_seconds(&self) -> u64 {
+		(self.to_u64() / 1000) - NtpToUnixEpochSeconds
+	}
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
