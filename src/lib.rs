@@ -1,22 +1,22 @@
 #![no_std]
 
-#![feature(core, alloc, no_std, macro_reexport, unboxed_closures, collections, convert, hash, step_by)]
+#![feature(alloc)]
+#![feature(no_std)]
+#![feature(macro_reexport)]
+#![feature(unboxed_closures)]
+#![feature(collections)]
+#![feature(step_by)]
+#![feature(clone_from_slice)]
+#![feature(vec_push_all)]
 
-#[macro_use(write)]
-extern crate core;
 extern crate alloc;
 extern crate collections;
 
 
-use core::prelude::*;
 use core::hash::Hasher;
-use core::hash::SipHasher;
-use core::array::FixedSizeArray;
 use core::fmt::{Formatter};
 
-use collections::vec::*;
-
-pub const NtpToUnixEpochSeconds: u64 = 0x83AA7E80;
+pub const NTP_TO_UNIX_EPOCH_SECONDS: u64 = 0x83AA7E80;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NtpEpochTime(u64);
@@ -27,7 +27,7 @@ impl NtpEpochTime {
 	}
 
 	pub fn from_unix_seconds(unix: u64) -> NtpEpochTime {
-		NtpEpochTime((NtpToUnixEpochSeconds + unix) * 1000)
+		NtpEpochTime((NTP_TO_UNIX_EPOCH_SECONDS + unix) * 1000)
 	}
 
 	pub fn to_u64(&self) -> u64 {
@@ -36,7 +36,7 @@ impl NtpEpochTime {
 	}
 
 	pub fn to_unix_seconds(&self) -> u64 {
-		(self.to_u64() / 1000) - NtpToUnixEpochSeconds
+		(self.to_u64() / 1000) - NTP_TO_UNIX_EPOCH_SECONDS
 	}
 }
 
@@ -214,30 +214,20 @@ impl core::fmt::Debug for SntpData {
     }
 }
 
-
-
-
-
 // for tests
 #[cfg(test)]
 #[macro_use(println, assert_eq, print, panic, try, panic)]
 extern crate std;
-
-
 
 #[cfg(test)]
 extern crate time;
 
 #[cfg(test)]
 mod tests {
-	
 
 	use super::*;
-	use core::prelude::*;
-	use std::prelude::*;
 	use collections::vec::Vec;
-	use time::*;
-	
+	use time::*;	
 
 	#[test]
 	fn test_ms_conv() {
@@ -266,7 +256,7 @@ mod tests {
 	fn time_to_ntp(time: &Tm) -> NtpEpochTime {
 		let t = time.to_timespec();
 
-		NtpEpochTime::new(((NtpToUnixEpochSeconds + t.sec as u64) * 1000) + (t.nsec as u64 / 1000000))
+		NtpEpochTime::new(((NTP_TO_UNIX_EPOCH_SECONDS + t.sec as u64) * 1000) + (t.nsec as u64 / 1000000))
 	}
 
 	use std::net::*;
@@ -281,7 +271,7 @@ mod tests {
 		println!("sntp request: {:?}", req);
 		
 		let send_addr = "0.pool.ntp.org:123";
-		let mut socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+		let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
 
 		match socket.send_to(&req.data[..], send_addr) {
 			Ok(bytes) => { println!("Sent {} bytes", bytes); }
@@ -289,7 +279,7 @@ mod tests {
 		}
 		
 		let mut buf = [0; 48];
-		let (amt, src) = socket.recv_from(&mut buf).unwrap();
+		socket.recv_from(&mut buf).unwrap();
 
 		let received_at = now_utc();
 
@@ -299,15 +289,11 @@ mod tests {
 			println!("net received: {:?}", v);
 		}
 
-		drop(socket);
-
-	
+		drop(socket);	
 
 		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
 		println!("sntp response: {:?}", sntp_resp);
 		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset(time_to_ntp(&received_at)));
-
-
 	}
 }
 
