@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/hashmismatch/sntp_client.rs.svg?branch=master)](https://travis-ci.org/hashmismatch/sntp_client.rs)
+
 # sntp_client
 
 A tiny SNTP packet parser and client.
