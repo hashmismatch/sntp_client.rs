@@ -285,7 +285,7 @@ mod tests {
 
 		{
 			let mut v = Vec::new();
-			v.push_all(&buf);
+			v.extend_from_slice(&buf);
 			println!("net received: {:?}", v);
 		}
 
