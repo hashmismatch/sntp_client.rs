@@ -4,5 +4,5 @@ name = "sntp_client"
 version = "0.0.1"
 authors = ["Rudi Benkovic <rudi.benkovic@gmail.com>"]
 
-[dependencies]
+[dev-dependencies]
 time = "0.1"

@@ -1,20 +1,6 @@
 #![no_std]
 
-#![feature(alloc)]
-#![feature(no_std)]
-#![feature(macro_reexport)]
-#![feature(unboxed_closures)]
-#![feature(collections)]
-#![feature(step_by)]
-#![feature(clone_from_slice)]
-#![feature(vec_push_all)]
-
-extern crate alloc;
-extern crate collections;
-
-
-use core::hash::Hasher;
-use core::fmt::{Formatter};
+use core::fmt::Formatter;
 
 pub const NTP_TO_UNIX_EPOCH_SECONDS: u64 = 0x83AA7E80;
 
@@ -178,14 +164,14 @@ impl SntpData {
 		let mut data = [0; 8];
 
 		let mut temp = int_part;
-		for i in (3..-1).step_by(-1 as i16) {
-			data[i as usize] = (temp % 256) as u8;			
+		for i in &[3, 2, 1, 0] {
+			data[*i] = (temp % 256) as u8;			
 			temp = temp / 256;
 		}
 
 		let mut temp = frac_part;
-		for i in (7..3).step_by(-1 as i16) {
-			data[i as usize] = (temp % 256) as u8;
+		for i in &[7, 6, 5, 4] {
+			data[*i] = (temp % 256) as u8;
 			temp = temp / 256;
 		}
 
@@ -226,7 +212,6 @@ extern crate time;
 mod tests {
 
 	use super::*;
-	use collections::vec::Vec;
 	use time::*;	
 
 	#[test]
@@ -262,38 +247,36 @@ mod tests {
 	use std::net::*;
 
 	#[test]
-	fn sntp_udp() {
+	fn sntp_udp_public_pool() {
 		
 		let now = now_utc();
-		println!("{:?}", now.to_timespec());
+		println!("Local time: {:?}", now.to_timespec());
 
 		let req = SntpData::new_request_sec(time_to_ntp(&now));
-		println!("sntp request: {:?}", req);
+		println!("SNTP request: {:?}", req);
 		
-		let send_addr = "0.pool.ntp.org:123";
+		let sntp_server = "0.pool.ntp.org:123";
+
+		let send_addr = sntp_server;
 		let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+
+		println!("Communicating with SNTP server {}", send_addr);
 
 		match socket.send_to(&req.data[..], send_addr) {
 			Ok(bytes) => { println!("Sent {} bytes", bytes); }
-			_ => { panic!("fail"); }
+			Err(e) => { panic!("Failed to send an UDP reqeust: {}", e); }
 		}
 		
 		let mut buf = [0; 48];
 		socket.recv_from(&mut buf).unwrap();
 
 		let received_at = now_utc();
-
-		{
-			let mut v = Vec::new();
-			v.push_all(&buf);
-			println!("net received: {:?}", v);
-		}
-
+		
 		drop(socket);	
 
 		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
-		println!("sntp response: {:?}", sntp_resp);
-		println!("local system time offset: {:?} ms", sntp_resp.local_time_offset(time_to_ntp(&received_at)));
+		println!("SNTP response: {:?}", sntp_resp);
+		println!("Local system time offset: {:?} ms", sntp_resp.local_time_offset(time_to_ntp(&received_at)));
 	}
 }
 
