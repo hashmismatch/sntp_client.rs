@@ -71,7 +71,7 @@ impl SntpData {
 		}
 	}
 
-	pub fn new_request_sec(now: NtpEpochTime) -> SntpData {
+	pub fn new_request_sec(now: NtpEpochTime) -> Self {
 		let mut data = SntpData::new();
 		data.set_mode(SntpMode::Client);
 		data.set_version(4);
@@ -79,11 +79,11 @@ impl SntpData {
 		data
 	}
 
-	pub fn from_buffer(buff: &[u8]) -> Option<SntpData> {
-		if buff.len() != 48 { return None; }
+	pub fn from_buffer(buff: &[u8]) -> Result<SntpData, ()> {
+		if buff.len() != 48 { return Err(()); }
 		let mut s = SntpData::new();
 		s.data.clone_from_slice(buff);
-		Some(s)
+		Ok(s)
 	}
 
 
@@ -200,83 +200,38 @@ impl core::fmt::Debug for SntpData {
     }
 }
 
-// for tests
-#[cfg(test)]
-#[macro_use(println, assert_eq, print, panic, try, panic)]
-extern crate std;
+#[test]
+fn test_ms_conv() {
+	let ms = NtpEpochTime::new(5229834209);
 
-#[cfg(test)]
-extern crate time;
+	let data = SntpData::ms_to_data(ms);
+	assert_eq!(&[0, 79, 205, 10, 53, 129, 6, 36], &data);
+	
+	let ms_conv = SntpData::data_to_ms(&data);
+	assert_eq!(ms, ms_conv);
+}
 
-#[cfg(test)]
-mod tests {
+#[test]
+fn sntp_data_gen() {
+	let mut data = SntpData::new();
+	data.set_mode(SntpMode::Client);
+	data.set_version(4);
+	data.set_transmit_time(NtpEpochTime::new(1001));
 
-	use super::*;
-	use time::*;	
+	assert_eq!(NtpEpochTime::new(1001), data.get_transmit_time());
+	assert_eq!(SntpMode::Client, data.get_mode());
+	assert_eq!(4, data.get_version());
+}
 
-	#[test]
-	fn test_ms_conv() {
-		let ms = NtpEpochTime::new(5229834209);
+#[test]
+fn sntp_data_parse() {
+	let buf = [36, 2, 3, 232, 0, 0, 1, 39, 0, 0, 9, 20, 162, 23, 41, 56, 221, 111, 129, 38, 220, 243, 246, 238, 221, 111, 132, 223, 232, 180, 57, 88, 221, 111, 132, 223, 223, 210, 132, 17, 221, 111, 132, 223, 223, 213, 89, 109];
 
-		let data = SntpData::ms_to_data(ms);
+	let sntp_resp = SntpData::from_buffer(&buf).unwrap();
 
-		let ms_conv = SntpData::data_to_ms(&data);
-
-		assert_eq!(ms, ms_conv);
-	}
-
-	#[test]
-	fn sntp_data() {
-		let mut data = SntpData::new();
-		data.set_mode(SntpMode::Client);
-		data.set_version(4);
-		data.set_transmit_time(NtpEpochTime::new(1001));
-
-		assert_eq!(NtpEpochTime::new(1001), data.get_transmit_time());
-		assert_eq!(SntpMode::Client, data.get_mode());
-		assert_eq!(4, data.get_version());
-
-	}
-
-	fn time_to_ntp(time: &Tm) -> NtpEpochTime {
-		let t = time.to_timespec();
-
-		NtpEpochTime::new(((NTP_TO_UNIX_EPOCH_SECONDS + t.sec as u64) * 1000) + (t.nsec as u64 / 1000000))
-	}
-
-	use std::net::*;
-
-	#[test]
-	fn sntp_udp_public_pool() {
-		
-		let now = now_utc();
-		println!("Local time: {:?}", now.to_timespec());
-
-		let req = SntpData::new_request_sec(time_to_ntp(&now));
-		println!("SNTP request: {:?}", req);
-		
-		let sntp_server = "0.pool.ntp.org:123";
-
-		let send_addr = sntp_server;
-		let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
-
-		println!("Communicating with SNTP server {}", send_addr);
-
-		match socket.send_to(&req.data[..], send_addr) {
-			Ok(bytes) => { println!("Sent {} bytes", bytes); }
-			Err(e) => { panic!("Failed to send an UDP reqeust: {}", e); }
-		}
-		
-		let mut buf = [0; 48];
-		socket.recv_from(&mut buf).unwrap();
-
-		let received_at = now_utc();
-		
-		drop(socket);	
-
-		let sntp_resp = SntpData::from_buffer(&buf).unwrap();
-		println!("SNTP response: {:?}", sntp_resp);
-		println!("Local system time offset: {:?} ms", sntp_resp.local_time_offset(time_to_ntp(&received_at)));
-	}
+	assert_eq!(NtpEpochTime(3715072294863), sntp_resp.get_reference_timestamp());
+	assert_eq!(NtpEpochTime(3715073247909), sntp_resp.get_originate_timestamp());
+	assert_eq!(NtpEpochTime(3715073247874), sntp_resp.get_receive_time());
+	assert_eq!(NtpEpochTime(3715073247874), sntp_resp.get_transmit_time());
 }
 
